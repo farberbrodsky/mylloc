@@ -104,5 +104,13 @@ void my_free(void *ptr) {
     size_t value = *((size_t *)prev_ptr);
     *((size_t *)prev_ptr) = value | 0b01; // mark as free
 }
-// void *my_calloc(size_t nmemb, size_t size);
+
+void *my_calloc(size_t nmemb, size_t size) {
+    size_t real_size = align(nmemb * size);
+    void *p = my_malloc(real_size);
+    void *end = p + real_size;
+    // fill with zeroes
+    for (; p < end; ++p) *(unsigned char *)p = 0;
+    return p;
+}
 // void *my_realloc(void *ptr, size_t size);
