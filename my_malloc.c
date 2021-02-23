@@ -25,6 +25,25 @@ static inline size_t align(size_t size) {
     return size;
 }
 
+// Returns the current real chunk size of the free chunk
+static size_t merge_free(void *free_ptr) {
+    void *next_p = free_ptr + (*(size_t *)free_ptr & (~0b11));
+    while (*(size_t *)next_p & 0b01) {
+        size_t real_next_size = *(size_t *)next_p & (~0b11);
+        // increase the header
+        *((size_t *)free_ptr) += real_next_size;
+
+        if (*(size_t *)next_p & 0b10) {
+            // this was the last chunk
+            *((size_t *)free_ptr) |= 0b10;
+            break;
+        } else {
+            next_p += real_next_size;
+        }
+    }
+    return *(size_t *)free_ptr & (~0b11);
+}
+
 void *my_malloc(size_t size) {
     initialize_my_mem();
     size = align(size);
@@ -38,24 +57,10 @@ void *my_malloc(size_t size) {
 
         size_t is_free = chunk_size & 0b01;
         if (is_free) {
-            // merge with the following free chunks
-            void *next_p = p + real_chunk_size;
-            while (*(size_t *)next_p & 0b01) {
-                // merge
-
-                size_t real_next_size = *(size_t *)next_p & (~0b11);
-                // increase the header and the saved size of the chunk
-                *((size_t *)p) += real_next_size;
-                real_chunk_size += real_next_size;
-
-                if (*(size_t *)next_p & 0b10) {
-                    // this was the last chunk
-                    *((size_t *)p) |= 0b10;
-                    chunk_size |= 0b10;
-                    break;
-                } else {
-                    next_p += real_next_size;
-                }
+            // if this is a free chunk, merge it with the following ones
+            if (*(size_t *)p & 0b01) {
+                real_chunk_size = merge_free(p);
+                chunk_size = *(size_t *)p;
             }
 
             if (real_chunk_size >= size) {
@@ -113,4 +118,43 @@ void *my_calloc(size_t nmemb, size_t size) {
     for (; p < end; ++p) *(unsigned char *)p = 0;
     return p;
 }
-// void *my_realloc(void *ptr, size_t size);
+
+void *my_realloc(void *ptr, size_t size) {
+    size = align(size);
+    void *p = ptr - sizeof(size_t);
+
+    size_t real_chunk_size = *(size_t *)p & (~0b11);
+    if (real_chunk_size > size) {
+        // add free space after it
+        if ((real_chunk_size - size) < sizeof(size_t)) {
+            // adding free space just isn't worth it
+            return ptr;
+        }
+        void *next_chunk = p + real_chunk_size;
+
+        if (*(size_t *)p & 0b10) {
+            // p was last
+            *(size_t *)p &= (~0b10);
+            *(size_t *)next_chunk = (real_chunk_size - size) | 0b11;
+        } else {
+            *(size_t *)next_chunk = (real_chunk_size - size) | 0b01;
+        }
+        return ptr;
+    } else {
+        // try to expand the chunk
+        void *next_ptr = p + real_chunk_size;
+        if (*(size_t *)next_ptr & 0b01) {
+            size_t next_chunk_size = merge_free(next_ptr);
+            if (real_chunk_size + next_chunk_size >= size) {
+                // can expand in-place
+                *(size_t *)p += next_chunk_size;
+                return ptr;
+            }
+        }
+        // expand by copying somewhere else
+        void *result = my_malloc(size);
+        memcpy(ptr, result, real_chunk_size);
+        my_free(ptr);
+        return result;
+    }
+}

@@ -3,6 +3,7 @@
 #endif
 #include <sys/mman.h>
 #include <stdint.h>
+#include <string.h>
 
 void *my_malloc(size_t size);
 void my_free(void *ptr);
