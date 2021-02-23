@@ -36,19 +36,41 @@ void *my_malloc(size_t size) {
         size_t real_chunk_size = chunk_size & (~0b11);
 
         size_t is_free = chunk_size & 0b01;
-        if (is_free && (real_chunk_size >= size)) {
-            // found a matching chunk!
-            if ((size - real_chunk_size) <= (sizeof(size_t) + 4)) {
-                // just take the same chunk
-                *((size_t *)p) &= (~0b1); // not free anymore
-                return p + sizeof(size_t);
-            } else {
-                // split the chunk to two
-                size_t remaining_free_chunk_size = real_chunk_size - size - 2 * sizeof(size_t);
-                void *next_p = p + size + sizeof(size_t);
-                *((size_t *)next_p) = remaining_free_chunk_size + (chunk_size & 0b11); // same lastness, same freeness
-                *((size_t *)p) = size + sizeof(size_t); // not free, not last
-                return p + sizeof(size_t);
+        if (is_free) {
+            // merge with the following free chunks
+            void *next_p = p + real_chunk_size;
+            while (*(size_t *)next_p & 0b01) {
+                // merge
+
+                size_t real_next_size = *(size_t *)next_p & (~0b11);
+                // increase the header and the saved size of the chunk
+                *((size_t *)p) += real_next_size;
+                real_chunk_size += real_next_size;
+
+                if (*(size_t *)next_p & 0b10) {
+                    // this was the last chunk
+                    *((size_t *)p) |= 0b10;
+                    chunk_size |= 0b10;
+                    break;
+                } else {
+                    next_p += real_next_size;
+                }
+            }
+
+            if (real_chunk_size >= size) {
+                // found a matching chunk!
+                if ((size - real_chunk_size) <= (sizeof(size_t) + 4)) {
+                    // just take the same chunk
+                    *((size_t *)p) &= (~0b1); // not free anymore
+                    return p + sizeof(size_t);
+                } else {
+                    // split the chunk to two
+                    size_t remaining_free_chunk_size = real_chunk_size - size - 2 * sizeof(size_t);
+                    void *next_p = p + size + sizeof(size_t);
+                    *((size_t *)next_p) = remaining_free_chunk_size + (chunk_size & 0b11); // same lastness, same freeness
+                    *((size_t *)p) = size + sizeof(size_t); // not free, not last
+                    return p + sizeof(size_t);
+                }
             }
         }
         p += real_chunk_size;
@@ -57,6 +79,10 @@ void *my_malloc(size_t size) {
     return NULL;
 }
 
-// void my_free(void *ptr);
+void my_free(void *ptr) {
+    void *prev_ptr = ptr - sizeof(size_t);
+    size_t value = *((size_t *)prev_ptr);
+    *((size_t *)prev_ptr) = value | 0b01; // mark as free
+}
 // void *my_calloc(size_t nmemb, size_t size);
 // void *my_realloc(void *ptr, size_t size);
