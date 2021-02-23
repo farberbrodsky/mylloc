@@ -31,9 +31,10 @@ void *my_malloc(size_t size) {
     // iterate over chunks to search for a free one that is big enough
     void *p = _my_mem;
     size_t chunk_size;
+    size_t real_chunk_size;
     do {
         chunk_size = *((size_t *)p);
-        size_t real_chunk_size = chunk_size & (~0b11);
+        real_chunk_size = chunk_size & (~0b11);
 
         size_t is_free = chunk_size & 0b01;
         if (is_free) {
@@ -75,8 +76,27 @@ void *my_malloc(size_t size) {
         }
         p += real_chunk_size;
     } while (!(chunk_size & 0b10)); // while not the last chunk
-    // there is no space - TODO: expand memory in this case
-    return NULL;
+    // there is no space - expand memory
+    // p is now the last chunk
+    p -= real_chunk_size;
+
+    // p - _my_mem is the amount of memory we used
+    size_t true_allocated = p - _my_mem;
+    mremap(_my_mem, allocated, true_allocated + sizeof(size_t) + size, 0);
+    allocated = true_allocated + sizeof(size_t) + size;
+
+    // if the last chunk was free - expand it
+    if (*(size_t *)p & 0b01) {
+        *(size_t *)p += size;
+        *(size_t *)p &= (~0b01); // not free anymore
+        return p + sizeof(size_t);
+    } else {
+        // create a new chunk
+        *(size_t *)p &= (~0b10); // not last anymore
+        p += real_chunk_size;
+        *(size_t *)p = size | 0b10; // is last, with this size
+        return p + sizeof(size_t);
+    }
 }
 
 void my_free(void *ptr) {

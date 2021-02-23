@@ -14,6 +14,8 @@ int main() {
     my_free(z);
     my_free(y);
     printf("fourth malloc\n");
-    void *w = my_malloc(32);
+    void *w = my_malloc(1024);
     printf("%p\n", w);
+    x = my_malloc(8);
+    printf("x %p\n", x);
 }
